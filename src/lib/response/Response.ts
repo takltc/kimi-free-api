@@ -47,8 +47,19 @@ export default class Response {
         this.statusCode && (ctx.status = this.statusCode);
         this.type && (ctx.type = mime.getType(this.type) || this.type);
         const headers = this.headers || {};
-        if(this.size && !headers["Content-Length"] && !headers["content-length"])
+        
+        // 对 SSE 响应自动设置必要的响应头
+        if(this.type === 'text/event-stream') {
+            headers['Connection'] = 'keep-alive';
+            headers['Cache-Control'] = 'no-cache, no-transform';
+            headers['X-Accel-Buffering'] = 'no'; // 针对 nginx 代理
+            // 移除 Content-Length，SSE 是流式响应
+            delete headers['Content-Length'];
+            delete headers['content-length'];
+        } else if(this.size && !headers["Content-Length"] && !headers["content-length"]) {
             headers["Content-Length"] = this.size;
+        }
+        
         ctx.set(headers);
         if(Body.isInstance(this.body))
             ctx.body = this.body.toObject();

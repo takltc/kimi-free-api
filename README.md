@@ -494,6 +494,313 @@ Authorization: Bearer [refresh_token]
 }
 ```
 
+## API 使用示例
+
+### 使用 curl 调用接口
+
+以下是使用 curl 命令调用各个接口的详细示例。请将 `YOUR_REFRESH_TOKEN` 替换为实际的 refresh_token。
+
+#### 1. 基础对话（非流式）
+
+```bash
+# 简单对话请求
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {"role": "user", "content": "你好，请介绍一下你自己"}
+    ],
+    "stream": false
+  }'
+```
+
+#### 2. 流式对话（SSE）
+
+```bash
+# 流式响应，实时输出
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -H "Accept: text/event-stream" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {"role": "user", "content": "写一首关于春天的诗"}
+    ],
+    "stream": true
+  }'
+```
+
+#### 3. 联网搜索
+
+```bash
+# 启用联网搜索获取最新信息
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi-search",
+    "messages": [
+      {"role": "user", "content": "今天的新闻有哪些？"}
+    ],
+    "use_search": true,
+    "stream": false
+  }'
+```
+
+#### 4. K1 思考模型
+
+```bash
+# 使用 K1 模型进行深度推理
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi-k1",
+    "messages": [
+      {"role": "user", "content": "解释量子纠缠的原理"}
+    ],
+    "stream": false
+  }'
+```
+
+#### 5. 获取模型列表
+
+```bash
+# 获取可用模型列表（不需要认证）
+curl http://localhost:8000/v1/models
+
+# 或者带认证头
+curl http://localhost:8000/v1/models \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN"
+```
+
+#### 6. 文档解析
+
+```bash
+# 解析PDF文档
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "file",
+            "file_url": {
+              "url": "https://example.com/document.pdf"
+            }
+          },
+          {
+            "type": "text",
+            "text": "请总结这个文档的主要内容"
+          }
+        ]
+      }
+    ],
+    "use_search": false
+  }'
+```
+
+#### 7. 图像OCR与分析
+
+```bash
+# 分析图像内容
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {
+        "role": "user",
+        "content": [
+          {
+            "type": "image_url",
+            "image_url": {
+              "url": "https://example.com/image.jpg"
+            }
+          },
+          {
+            "type": "text",
+            "text": "这张图片中有什么？"
+          }
+        ]
+      }
+    ],
+    "use_search": false
+  }'
+```
+
+#### 8. 多轮对话
+
+```bash
+# 包含上下文的多轮对话
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {"role": "system", "content": "你是一个有帮助的助手"},
+      {"role": "user", "content": "我想学习Python"},
+      {"role": "assistant", "content": "很好！Python是一门非常适合初学者的编程语言。你想从哪个方面开始学习呢？"},
+      {"role": "user", "content": "从基础语法开始吧"}
+    ],
+    "stream": false
+  }'
+```
+
+#### 9. 使用原生多轮对话（conversation_id）
+
+```bash
+# 第一轮对话
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {"role": "user", "content": "记住我的名字是Alice"}
+    ],
+    "conversation_id": "none",
+    "stream": false
+  }'
+
+# 响应中会包含 conversation_id，例如: "id": "cnndivilnl96vah411dg"
+
+# 第二轮对话，使用上一轮返回的 id
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer YOUR_REFRESH_TOKEN" \
+  -d '{
+    "model": "kimi",
+    "messages": [
+      {"role": "user", "content": "我的名字是什么？"}
+    ],
+    "conversation_id": "cnndivilnl96vah411dg",
+    "stream": false
+  }'
+```
+
+#### 10. 错误响应示例
+
+```bash
+# 缺少认证头的错误响应
+curl -X POST http://localhost:8000/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -d '{
+    "model": "kimi",
+    "messages": [{"role": "user", "content": "test"}]
+  }'
+
+# 响应示例:
+# {
+#   "error": {
+#     "type": "authentication_error",
+#     "message": "Missing Authorization header",
+#     "code": "unauthorized"
+#   }
+# }
+```
+
+#### 11. 使用环境变量简化调用
+
+```bash
+# 设置环境变量
+export API_KEY="YOUR_REFRESH_TOKEN"
+export API_BASE="http://localhost:8000"
+
+# 使用环境变量调用
+curl -X POST $API_BASE/v1/chat/completions \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer $API_KEY" \
+  -d '{
+    "model": "kimi",
+    "messages": [{"role": "user", "content": "Hello"}],
+    "stream": false
+  }'
+```
+
+#### 12. 检查 token 是否有效
+
+```bash
+# 检查 refresh_token 是否存活
+curl -X POST http://localhost:8000/token/check \
+  -H "Content-Type: application/json" \
+  -d '{
+    "token": "YOUR_REFRESH_TOKEN"
+  }'
+
+# 响应示例:
+# {"live": true}  # token有效
+# {"live": false} # token无效
+```
+
+### 响应格式说明
+
+#### 非流式响应格式
+```json
+{
+  "id": "chatcmpl-xxx",
+  "object": "chat.completion",
+  "created": 1234567890,
+  "model": "kimi",
+  "choices": [
+    {
+      "index": 0,
+      "message": {
+        "role": "assistant",
+        "content": "这是助手的回复内容"
+      },
+      "finish_reason": "stop"
+    }
+  ],
+  "usage": {
+    "prompt_tokens": 10,
+    "completion_tokens": 20,
+    "total_tokens": 30
+  }
+}
+```
+
+#### 流式响应格式（SSE）
+```
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","created":1234567890,"model":"kimi","choices":[{"index":0,"delta":{"content":"这"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","created":1234567890,"model":"kimi","choices":[{"index":0,"delta":{"content":"是"},"finish_reason":null}]}
+
+data: {"id":"chatcmpl-xxx","object":"chat.completion.chunk","created":1234567890,"model":"kimi","choices":[{"index":0,"delta":{},"finish_reason":"stop"}]}
+
+data: [DONE]
+```
+
+### 测试脚本使用
+
+项目包含完整的测试脚本，可以验证所有接口功能：
+
+```bash
+# 运行完整的 E2E 测试
+npm test
+
+# 或者运行特定测试
+npm run test:auth   # 测试认证功能
+npm run test:cors   # 测试CORS配置
+npm run test:errors # 测试错误处理
+npm run test:e2e    # 完整E2E测试
+
+# 运行所有测试
+npm run test:all
+
+# 使用环境变量指定真实token进行测试
+API_KEY="YOUR_REAL_TOKEN" npm test
+```
+
 ## 注意事项
 
 ### Nginx反代优化

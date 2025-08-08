@@ -1,4 +1,5 @@
 import _ from 'lodash';
+import { createModelList } from '@/lib/openai-compat';
 
 export default {
 
@@ -6,35 +7,8 @@ export default {
 
     get: {
         '/models': async () => {
-            return {
-                "data": [
-                    {
-                        "id": "moonshot-v1",
-                        "object": "model",
-                        "owned_by": "kimi-free-api"
-                    },
-                    {
-                        "id": "moonshot-v1-8k",
-                        "object": "model",
-                        "owned_by": "kimi-free-api"
-                    },
-                    {
-                        "id": "moonshot-v1-32k",
-                        "object": "model",
-                        "owned_by": "kimi-free-api"
-                    },
-                    {
-                        "id": "moonshot-v1-128k",
-                        "object": "model",
-                        "owned_by": "kimi-free-api"
-                    },
-                    {
-                        "id": "moonshot-v1-vision",
-                        "object": "model",
-                        "owned_by": "kimi-free-api"
-                    }
-                ]
-            };
+            // 使用 OpenAI 兼容层创建标准格式的模型列表
+            return createModelList();
         }
 
     }

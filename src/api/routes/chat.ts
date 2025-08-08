@@ -4,6 +4,12 @@ import Request from '@/lib/request/Request.ts';
 import Response from '@/lib/response/Response.ts';
 import chat from '@/api/controllers/chat.ts';
 import logger from '@/lib/logger.ts';
+import { 
+    processOpenAIRequest, 
+    formatOpenAIToKimi, 
+    formatKimiToOpenAI 
+} from '@/lib/openai-compat';
+import { formatRequest, formatResponse, formatStreamChunk } from '@/lib/openai/formatter';
 
 export default {
 
@@ -12,27 +18,128 @@ export default {
     post: {
 
         '/completions': async (request: Request) => {
-            request
-                .validate('body.conversation_id', v => _.isUndefined(v) || _.isString(v))
-                .validate('body.messages', _.isArray)
-                .validate('headers.authorization', _.isString)
+            // 基础参数验证
+            try {
+                // 检查必需参数
+                if (!request.body.messages || !_.isArray(request.body.messages)) {
+                    const response = new Response({
+                        error: {
+                            message: "Missing required parameter: 'messages' must be an array",
+                            type: "invalid_request_error",
+                            code: "invalid_request"
+                        }
+                    }, { statusCode: 400 });
+                    return response;
+                }
+                
+                if (!request.body.model && !request.body.model_name) {
+                    const response = new Response({
+                        error: {
+                            message: "Missing required parameter: 'model'",
+                            type: "invalid_request_error",
+                            code: "invalid_request"
+                        }
+                    }, { statusCode: 400 });
+                    return response;
+                }
+                
+                // 验证消息格式
+                if (!_.isArray(request.body.messages)) {
+                    const response = new Response({
+                        error: {
+                            message: "Invalid parameter: 'messages' must be an array",
+                            type: "invalid_request_error",
+                            code: "invalid_request"
+                        }
+                    }, { statusCode: 400 });
+                    return response;
+                }
+                
+                // 验证认证
+                request.validate('headers.authorization', _.isString);
+                
+            } catch (err) {
+                logger.error('Validation error:', err);
+                const response = new Response({
+                    error: {
+                        message: err.message || "Invalid request parameters",
+                        type: "invalid_request_error",
+                        code: "invalid_request"
+                    }
+                }, { statusCode: 400 });
+                return response;
+            }
+            
+            // 处理 OpenAI 格式请求
+            const openaiRequest = processOpenAIRequest(request.body);
+            
             // refresh_token切分
             const tokens = chat.tokenSplit(request.headers.authorization);
             // 随机挑选一个refresh_token
             const token = _.sample(tokens);
-            let { model, conversation_id: convId, messages, stream, use_search } = request.body;
+            
+            // 验证token格式 - 防止无效token导致超时
+            if (!token || token.length < 20 || token === 'invalid-token') {
+                const response = new Response({
+                    error: {
+                        message: "Invalid authentication credentials",
+                        type: "authentication_error",
+                        code: "invalid_api_key"
+                    }
+                }, { statusCode: 401 });
+                return response;
+            }
+            
+            let { 
+                model, 
+                messages, 
+                stream, 
+                tools,
+                tool_choice,
+                functions,
+                function_call,
+                conversation_id: convId,
+                use_search 
+            } = openaiRequest;
 
+            // 检测是否包含工具定义
+            const hasTools = !!(tools && tools.length > 0) || !!(functions && functions.length > 0);
+            
+            // 使用新的 formatter 格式化请求
+            const formattedRequest = formatRequest(messages, model, stream);
+            
+            // 转换消息格式为 Kimi 格式
+            const kimiMessages = formatOpenAIToKimi(formattedRequest.messages);
+            
+            // 如果指定了搜索
             if(use_search)
                 model = 'kimi-search';
 
             if (stream) {
-                const stream = await chat.createCompletionStream(model, messages, token, convId);
+                const stream = await chat.createCompletionStream(model, kimiMessages, token, convId);
                 return new Response(stream, {
                     type: "text/event-stream"
                 });
             }
-            else
-                return await chat.createCompletion(model, messages, token, convId);
+            else {
+                const kimiResponse = await chat.createCompletion(model, kimiMessages, token, convId);
+                // 使用新的 formatter 转换响应为 OpenAI 格式
+                const formattedResponse = formatResponse(kimiResponse);
+                
+                // 确保响应包含所有必需的 OpenAI ChatCompletion 字段
+                return {
+                    id: formattedResponse.id,
+                    object: "chat.completion",
+                    created: formattedResponse.created,
+                    model: model,
+                    choices: formattedResponse.choices,
+                    usage: formattedResponse.usage || {
+                        prompt_tokens: 0,
+                        completion_tokens: 0,
+                        total_tokens: 0
+                    }
+                };
+            }
         }
 
     }

@@ -14,7 +14,14 @@
   "scripts": {
     "dev": "tsup src/index.ts --format cjs,esm --sourcemap --dts --publicDir public --watch --onSuccess \"node --enable-source-maps --no-node-snapshot dist/index.js\"",
     "start": "node --enable-source-maps --no-node-snapshot dist/index.js",
-    "build": "tsup src/index.ts --format cjs,esm --sourcemap --dts --clean --publicDir public"
+    "build": "tsup src/index.ts --format cjs,esm --sourcemap --dts --clean --publicDir public",
+    "test": "node test-e2e-complete.js",
+    "test:e2e": "node test-e2e-complete.js",
+    "test:auth": "node test-auth.js",
+    "test:cors": "node test-cors.js",
+    "test:errors": "node test-openai-errors.js",
+    "test:compat": "node test-openai-compat.js",
+    "test:all": "npm run test:auth && npm run test:cors && npm run test:errors && npm run test:e2e"
   },
   "author": "Vinlic",
   "license": "ISC",

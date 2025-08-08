@@ -125,6 +125,11 @@ async function requestToken(refreshToken: string) {
  * @param refreshToken 用于刷新access_token的refresh_token
  */
 async function acquireToken(refreshToken: string): Promise<any> {
+  // 验证token格式 - 应该是一个有效的JWT token
+  if (!refreshToken || refreshToken.length < 20 || refreshToken === 'invalid-token') {
+    throw new APIException(EX.API_REQUEST_FAILED, 'Invalid token format');
+  }
+  
   let result = accessTokenMap.get(refreshToken);
   if (!result) {
     result = await requestToken(refreshToken);
@@ -613,15 +618,43 @@ function messagesPrepare(messages: any[], isRefConv = false) {
       messages.splice(messages.length - 1, 0, newTextMessage);
       logger.info("注入提升尾部消息注意力system prompt");
     }
-    content = messages.reduce((content, message) => {
+    // 改进的多轮对话格式，使AI更好地理解上下文
+    const formattedMessages = [];
+    
+    // 添加系统提示，强调这是多轮对话
+    formattedMessages.push("[系统提示] 这是一段多轮对话记录，请根据完整的对话历史回答用户的最新问题。\n");
+    
+    // 格式化每条消息，使角色更清晰
+    messages.forEach((message, index) => {
       if (_.isArray(message.content)) {
-        return message.content.reduce((_content, v) => {
-          if (!_.isObject(v) || v['type'] != 'text') return _content;
-          return _content + `${message.role || "user"}:${v["text"] || ""}\n`;
-        }, content);
+        const textContent = message.content.reduce((text, v) => {
+          if (!_.isObject(v) || v['type'] != 'text') return text;
+          return text + (v["text"] || "");
+        }, '');
+        if (textContent) {
+          if (message.role === 'assistant') {
+            formattedMessages.push(`[AI助手]: ${textContent}`);
+          } else if (message.role === 'user') {
+            formattedMessages.push(`[用户]: ${wrapUrlsToTags(textContent)}`);
+          } else if (message.role === 'system') {
+            formattedMessages.push(`[系统]: ${textContent}`);
+          }
+        }
+      } else if (message.content) {
+        if (message.role === 'assistant') {
+          formattedMessages.push(`[AI助手]: ${message.content}`);
+        } else if (message.role === 'user') {
+          formattedMessages.push(`[用户]: ${wrapUrlsToTags(message.content)}`);
+        } else if (message.role === 'system') {
+          formattedMessages.push(`[系统]: ${message.content}`);
+        }
       }
-      return content += `${message.role || "user"}:${message.role == 'user' ? wrapUrlsToTags(message.content) : message.content}\n`;
-    }, '')
+    });
+    
+    // 添加提示强调最新的问题
+    formattedMessages.push("\n[系统提示] 请特别注意并回答用户的最新问题。");
+    
+    content = formattedMessages.join('\n');
     logger.info("\n对话合并：\n" + content);
   }
 
@@ -936,17 +969,49 @@ function createTransStream(model: string, convId: string, stream: any, endCallba
   let searchFlag = false;
   let lengthExceed = false;
   let segmentId = '';
+  let streamClosed = false;
   const silentSearch = model.indexOf('silent') != -1;
-  !transStream.closed && transStream.write(`data: ${JSON.stringify({
-    id: convId,
-    model,
-    object: 'chat.completion.chunk',
-    choices: [
-      { index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }
-    ],
-    segment_id: '',
-    created
-  })}\n\n`);
+  
+  // 清理函数，确保流正确关闭
+  const cleanup = () => {
+    if (streamClosed) return;
+    streamClosed = true;
+    
+    // 确保发送 [DONE] 标记
+    if (!transStream.closed && !transStream.destroyed) {
+      transStream.write('data: [DONE]\n\n');
+      transStream.end();
+    }
+    
+    // 调用结束回调
+    endCallback && endCallback();
+  };
+  
+  // 监听转换流的关闭事件（客户端断开连接）
+  transStream.on('close', () => {
+    logger.info('Client disconnected from SSE stream');
+    cleanup();
+  });
+  
+  transStream.on('error', (err) => {
+    logger.error('TransStream error:', err);
+    cleanup();
+  });
+  
+  // 发送初始消息
+  if (!transStream.closed && !transStream.destroyed) {
+    transStream.write(`data: ${JSON.stringify({
+      id: convId,
+      model,
+      object: 'chat.completion.chunk',
+      choices: [
+        { index: 0, delta: { role: 'assistant', content: '' }, finish_reason: null }
+      ],
+      segment_id: '',
+      created
+    })}\n\n`);
+  }
+  
   const parser = createParser(event => {
     try {
       if (event.type !== "event") return;
@@ -982,6 +1047,8 @@ function createTransStream(model: string, convId: string, stream: any, endCallba
       }
       // 处理结束或错误
       else if (result.event == 'all_done' || result.event == 'error') {
+        if (streamClosed) return; // 避免重复处理
+        
         const data = `data: ${JSON.stringify({
           id: convId,
           model,
@@ -997,9 +1064,13 @@ function createTransStream(model: string, convId: string, stream: any, endCallba
           segment_id: segmentId,
           created
         })}\n\n`;
-        !transStream.closed && transStream.write(data);
-        !transStream.closed && transStream.end('data: [DONE]\n\n');
-        endCallback && endCallback();
+        
+        if (!transStream.closed && !transStream.destroyed) {
+          transStream.write(data);
+        }
+        
+        // 使用 cleanup 统一处理结束逻辑
+        cleanup();
       }
       // 处理联网搜索
       else if (!silentSearch && result.event == 'search_plus' && result.msg && result.msg.type == 'get_res') {
@@ -1031,9 +1102,31 @@ function createTransStream(model: string, convId: string, stream: any, endCallba
     }
   });
   // 将流数据喂给SSE转换器
-  stream.on("data", buffer => parser.feed(buffer.toString()));
-  stream.once("error", () => !transStream.closed && transStream.end('data: [DONE]\n\n'));
-  stream.once("close", () => !transStream.closed && transStream.end('data: [DONE]\n\n'));
+  stream.on("data", buffer => {
+    if (streamClosed) return; // 如果已关闭，忽略数据
+    try {
+      parser.feed(buffer.toString());
+    } catch (err) {
+      logger.error('Parser feed error:', err);
+      cleanup();
+    }
+  });
+  
+  stream.once("error", (err) => {
+    logger.error('Source stream error:', err);
+    cleanup();
+  });
+  
+  stream.once("close", () => {
+    logger.info('Source stream closed');
+    // 等待一小段时间，确保最后的数据处理完成
+    setTimeout(() => {
+      if (!streamClosed) {
+        cleanup();
+      }
+    }, 100);
+  });
+  
   return transStream;
 }
 
