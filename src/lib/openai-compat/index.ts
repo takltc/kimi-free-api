@@ -158,7 +158,12 @@ export function createModelList(): OpenAIModelListResponse {
         'kimi-search',
         'kimi-research',
         'kimi-k1',
-        'kimi-math'
+        'kimi-math',
+        // Anthropic / Claude
+        'claude-3-opus-20240229',
+        'claude-3-sonnet-20240229',
+        'claude-3-haiku-20240307',
+        'claude-3-5-sonnet-20240620'
     ];
     
     const created = 1704067200; // 2024-01-01 的时间戳
