@@ -268,10 +268,7 @@ function mapModelName(openaiModel: string): string {
     'gpt-4': 'moonshot-v1-32k',
     'gpt-4-32k': 'moonshot-v1-128k',
     'gpt-4-turbo': 'moonshot-v1-128k',
-    'gpt-4-vision-preview': 'moonshot-v1-vision',
-    'claude-3-opus': 'kimi',
-    'claude-3-sonnet': 'kimi',
-    'claude-3-haiku': 'kimi'
+    'gpt-4-vision-preview': 'moonshot-v1-vision'
   };
   
   // 如果有映射则返回映射值，否则返回原值
