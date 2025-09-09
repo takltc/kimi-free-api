@@ -2,3 +2,8 @@ dist/
 node_modules/
 logs/
 .vercel
+
+# AI
+CLAUDE.md
+AGENTS.md
+WARP.md
