@@ -13,7 +13,7 @@
 
 支持高速流式输出、支持多轮对话、支持联网搜索、支持智能体对话、支持探索版、支持K1思考模型、支持长文档解读、支持图像解析，零配置部署，多路token支持，自动清理会话痕迹。
 
-与ChatGPT接口完全兼容。
+与ChatGPT接口完全兼容。新增对接 Claude Code（Anthropic Messages API），支持工具调用与MCP风格工具消息透传。
 
 还有以下十个free-api欢迎关注：
 
@@ -55,6 +55,7 @@ MiniMax（海螺AI）接口转API [hailuo-free-api](https://github.com/LLM-Red-T
   * [文档解读](#文档解读)
   * [图像解析](#图像解析)
   * [refresh_token存活检测](#refresh_token存活检测)
+* [Claude Code对接](#claude-code对接)
 * [注意事项](#注意事项)
   * [Nginx反代优化](#Nginx反代优化)
   * [Token统计](#Token统计)
@@ -802,6 +803,20 @@ API_KEY="YOUR_REAL_TOKEN" npm test
 ```
 
 ## 注意事项
+
+## Claude Code对接
+
+当 `model` 以 `claude-` 开头（如 `claude-3-5-sonnet-20240620`）时，请求将转发至 Anthropic Messages API。
+
+配置项：
+
+- `ANTHROPIC_API_KEY`：服务端环境变量；也可在请求头传 `x-anthropic-api-key`。
+- `ANTHROPIC_BASE_URL`（可选）：默认 `https://api.anthropic.com`。
+
+工具调用与流式：
+
+- 请求体中的 `tools`（OpenAI function 工具）会映射为 Anthropic `tools`，并保持 `assistant.tool_calls` 与后续 `role: tool` 的消息语义不变，转换为 `tool_use` 与 `tool_result` 块，方便 Claude Code 调用外部工具/MCP 客户端。
+- 支持 `stream: true`：将 Anthropic SSE 事件转换为 OpenAI Chat Completions 流（包含文本增量与 `tool_calls` 参数的增量拼接）。
 
 ### Nginx反代优化
 
