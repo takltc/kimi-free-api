@@ -10,6 +10,7 @@ import {
     formatKimiToOpenAI 
 } from '@/lib/openai-compat';
 import { formatRequest, formatResponse, formatStreamChunk } from '@/lib/openai/formatter';
+import { isClaudeModel, mapOpenAIToAnthropic, anthropicChatCreate, anthropicChatCreateStream, mapAnthropicResponseToOpenAI, resolveAnthropicBaseUrl } from '@/lib/providers/anthropic.ts';
 
 export default {
 
@@ -72,6 +73,50 @@ export default {
             
             // 处理 OpenAI 格式请求
             const openaiRequest = processOpenAIRequest(request.body);
+            // Claude(Anthropic) 分支：直接对接 Claude Code（工具/MCP 兼容）
+            if (isClaudeModel(openaiRequest.model)) {
+                const apiKey = (request.headers['x-anthropic-api-key'] as string) || process.env.ANTHROPIC_API_KEY;
+                if (!apiKey) {
+                    const response = new Response({
+                        error: {
+                            message: "Missing Anthropic API key. Provide ANTHROPIC_API_KEY env or 'x-anthropic-api-key' header.",
+                            type: "authentication_error",
+                            code: "invalid_api_key"
+                        }
+                    }, { statusCode: 401 });
+                    return response;
+                }
+
+                const baseUrl = resolveAnthropicBaseUrl(process.env.ANTHROPIC_BASE_URL);
+
+                // 构造 Anthropic 消息体（保持 tool_calls 与 tool 消息语义）
+                const anthropicBody = mapOpenAIToAnthropic({
+                    model: openaiRequest.model,
+                    messages: openaiRequest.messages,
+                    tools: openaiRequest.tools || openaiRequest.functions /* 兼容旧版 */,
+                    temperature: openaiRequest.temperature,
+                    top_p: openaiRequest.top_p,
+                    max_tokens: openaiRequest.max_tokens,
+                    stream: !!openaiRequest.stream
+                });
+
+                const reqId = request.headers['x-request-id'] as string || undefined;
+
+                if (openaiRequest.stream) {
+                    const stream = await anthropicChatCreateStream(baseUrl, apiKey, { ...anthropicBody, stream: true }, openaiRequest.model, reqId);
+                    return new Response(stream, { type: 'text/event-stream' });
+                }
+
+                const upstream = await anthropicChatCreate(baseUrl, apiKey, { ...anthropicBody, stream: false }, reqId);
+                if (!upstream.ok) {
+                    const text = await upstream.text();
+                    const response = new Response({ error: { message: `Anthropic upstream error ${upstream.status}: ${text}` } }, { statusCode: 502 });
+                    return response;
+                }
+                const openaiLike = await mapAnthropicResponseToOpenAI(upstream, openaiRequest.model);
+                return new Response(openaiLike);
+            }
+
             
             // refresh_token切分
             const tokens = chat.tokenSplit(request.headers.authorization);
